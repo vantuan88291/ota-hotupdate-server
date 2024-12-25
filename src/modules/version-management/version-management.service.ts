@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { cleanFolder, copyAllFiles, copyFile, deleteFolder, readFileAsString, traverseAllFilesInFolder, traverseAllFoldersInFolder, writeBufferToFile, writeStringToFile } from 'src/common/utils/fs.utils';
+import { fileExists, cleanFolder, copyAllFiles, copyFile, deleteFolder, readFileAsString, traverseAllFilesInFolder, traverseAllFoldersInFolder, writeBufferToFile, writeStringToFile } from 'src/common/utils/fs.utils';
 import * as path from 'path';
 import { uncompressZip } from 'src/common/utils/uncompress.utils';
 import { v4 as uuidv4 } from 'uuid';
@@ -11,6 +11,23 @@ interface CreateNewVersionInput {
 	bundle: Buffer;
 }
 
+interface GetVersionUpdateInput {
+	versionName: string;
+	urlPrefix?: string;
+}
+
+export interface GetVersionUpdateResult {
+	assetBundle?: string;
+}
+
+interface AppConfig {
+	appId: string;
+	latestVersion: string;
+}
+
+
+const DATA_FOLDER_NAME = "data";
+const APP_CONFIG_FILE = "app_config.json";
 const PUBLIC_FOLDER_NAME = "public";
 const SAMPLE_APP_ID = "test-ota";
 const TEMP_FOLDER_NAME = "temp";
@@ -28,10 +45,23 @@ export class VersionManagementService {
 		this.processNewVersion(input.versionName, filePath, folderPath, SAMPLE_APP_ID)
 			.finally(() => {
 				deleteFolder(tempFolderPath);
-				deleteFolder(folderPath);					
+				deleteFolder(folderPath);
 			});
 		return {
 			filePath
+		}
+	}
+
+	async getVersionUpdate(input: GetVersionUpdateInput): Promise<GetVersionUpdateResult> {
+		const latestVersion = await this.getLatestVersion(SAMPLE_APP_ID);
+		if (!latestVersion || input.versionName === latestVersion) {
+			return {}
+		}
+		const targetBundleFilePath = path.join(PUBLIC_FOLDER_NAME, SAMPLE_APP_ID, input.versionName, BUNDLE_FILE_NAME);
+		const bundleExists = await fileExists(targetBundleFilePath);
+		const bundlePath = bundleExists ? targetBundleFilePath : path.join(PUBLIC_FOLDER_NAME, SAMPLE_APP_ID, latestVersion, BUNDLE_FILE_NAME);
+		return {
+			assetBundle: `${input.urlPrefix || ""}/${bundlePath}`
 		}
 	}
 
@@ -67,42 +97,41 @@ export class VersionManagementService {
 		const zipBundleFilePath = path.join(currentVersionFolderPath, BUNDLE_FILE_NAME);
 		await compressToZip(bundleFolderPath, zipBundleFilePath);
 
-    const cb = async (oldVersionName: string, oldVersionFolderPath: string) => {
-      await this.computeNewDistributionForOldVersion(oldVersionName, oldVersionFolderPath, newChecksum, bundleFolderPath, distFolderPath);
-    };
-		// Step 2: compute for older versions
-    await this.traverseOldVersions(appId, cb);
+		const cb = async (oldVersionName: string, oldVersionFolderPath: string) => {
+			await this.computeNewDistributionForOldVersion(oldVersionName, oldVersionFolderPath, newChecksum, bundleFolderPath, distFolderPath);
+		};
+		await this.traverseOldVersions(appId, cb);
 		return distFolderPath;
 	}
 
-  private async computeNewDistributionForOldVersion(
-    oldVersionName: string, 
-    oldVersionFolderPath: string, 
-    newChecksum: Map<string, string>, 
-    newBundleFolderPath: string,
-    newDistFolderPath: string,
-  ): Promise<void> {
-    const oldVersionNewDistFolderPath = path.join(newDistFolderPath, oldVersionName);
-    const oldVersionNewBundleFolderPath = path.join(oldVersionNewDistFolderPath, uuidv4());
-    const oldVersionZipBundlePath = path.join(oldVersionNewDistFolderPath, BUNDLE_FILE_NAME);
-    const oldChecksumPath = path.join(oldVersionFolderPath, CHECKSUM_FILE);
-    const newChecksumPath = path.join(oldVersionNewDistFolderPath, CHECKSUM_FILE);
+	private async computeNewDistributionForOldVersion(
+		oldVersionName: string,
+		oldVersionFolderPath: string,
+		newChecksum: Map<string, string>,
+		newBundleFolderPath: string,
+		newDistFolderPath: string,
+	): Promise<void> {
+		const oldVersionNewDistFolderPath = path.join(newDistFolderPath, oldVersionName);
+		const oldVersionNewBundleFolderPath = path.join(oldVersionNewDistFolderPath, uuidv4());
+		const oldVersionZipBundlePath = path.join(oldVersionNewDistFolderPath, BUNDLE_FILE_NAME);
+		const oldChecksumPath = path.join(oldVersionFolderPath, CHECKSUM_FILE);
+		const newChecksumPath = path.join(oldVersionNewDistFolderPath, CHECKSUM_FILE);
 
-    await copyFile(oldChecksumPath, newChecksumPath)
-	const oldCheckSumStr =  await readFileAsString(newChecksumPath);
-	const oldCheckSumJson = JSON.parse(oldCheckSumStr);
-	const oldCheckSumMap: Map<string, string> = new Map(Object.entries(oldCheckSumJson));
+		await copyFile(oldChecksumPath, newChecksumPath)
+		const oldCheckSumStr = await readFileAsString(newChecksumPath);
+		const oldCheckSumJson = JSON.parse(oldCheckSumStr);
+		const oldCheckSumMap: Map<string, string> = new Map(Object.entries(oldCheckSumJson));
 
-	for(const [key, checksum] of newChecksum) {
-		if(!oldCheckSumMap.has(key) || oldCheckSumMap.get(key) != checksum) {
-			const assetFilePath = path.join(newBundleFolderPath, key);
-			await copyFile(assetFilePath, path.join(oldVersionNewBundleFolderPath, key));
+		for (const [key, checksum] of newChecksum) {
+			if (!oldCheckSumMap.has(key) || oldCheckSumMap.get(key) != checksum) {
+				const assetFilePath = path.join(newBundleFolderPath, key);
+				await copyFile(assetFilePath, path.join(oldVersionNewBundleFolderPath, key));
+			}
 		}
-	}
 
-	await compressToZip(oldVersionNewBundleFolderPath, oldVersionZipBundlePath);
-	await deleteFolder(oldVersionNewBundleFolderPath);
-  }
+		await compressToZip(oldVersionNewBundleFolderPath, oldVersionZipBundlePath);
+		await deleteFolder(oldVersionNewBundleFolderPath);
+	}
 
 	private async publishNewDistribution(versionName: string, appId: string, newDistFolderPath: string): Promise<void> {
 		const publicDistFolderPath = path.join(PUBLIC_FOLDER_NAME, appId);
@@ -111,19 +140,74 @@ export class VersionManagementService {
 		try {
 			await cleanFolder(publicDistFolderPath);
 			await copyAllFiles(newDistFolderPath, publicDistFolderPath);
-		} catch(t) {
+			this.updateLatestVersion(appId, versionName);
+		} catch (t) {
 			copyAllFiles(backUpFolderPath, publicDistFolderPath);
-				throw t;
+			throw t;
 		} finally {
 			deleteFolder(backUpFolderPath);
 		}
 	}
 
-  private async traverseOldVersions(appId: string, cb: (versionName: String, folderPath: string) => Promise<void>): Promise<void> {
-    const oldDistFolderPath = path.join(PUBLIC_FOLDER_NAME, appId);
-    await traverseAllFoldersInFolder(oldDistFolderPath, async (folderPath) => {
-      const versionName = path.basename(folderPath);
-      await cb(versionName, folderPath);
-    });
-  }
+	private async traverseOldVersions(appId: string, cb: (versionName: String, folderPath: string) => Promise<void>): Promise<void> {
+		const oldDistFolderPath = path.join(PUBLIC_FOLDER_NAME, appId);
+		await traverseAllFoldersInFolder(oldDistFolderPath, async (folderPath) => {
+			const versionName = path.basename(folderPath);
+			await cb(versionName, folderPath);
+		});
+	}
+
+	private async getLatestVersion(appId: string): Promise<string | null> {
+		const appConfig = await this.getAppConfig(appId);
+		return appConfig?.latestVersion;
+	}
+
+	private async updateLatestVersion(appId: string, versionName: string): Promise<void> {
+		var appConfig: AppConfig = await this.getAppConfig(appId);
+		if(!appConfig) {
+			await this.createAppConfig({
+				appId,
+				latestVersion: versionName
+			});
+			return;
+		}
+		appConfig.latestVersion = versionName;
+		await this.updateAppConfig(appConfig);
+	}
+
+	private async getAppConfig(appId: string): Promise<AppConfig | null> {
+		const appConfigData = await this.getAppConfigData();
+		return appConfigData.get(appId);
+	}
+
+	private async createAppConfig(appConfig: AppConfig): Promise<AppConfig> {
+		const appConfigData = await this.getAppConfigData();
+		appConfigData.set(appConfig.appId, appConfig);
+		await this.saveAppConfigData(appConfigData);
+		return appConfig;
+	}
+
+	private async updateAppConfig(appConfig: AppConfig): Promise<AppConfig> {
+		const appConfigData = await this.getAppConfigData();
+		appConfigData.set(appConfig.appId, appConfig);
+		await this.saveAppConfigData(appConfigData);
+		return appConfig;
+	}
+
+	private async getAppConfigData(): Promise<Map<string, AppConfig>> {
+		const appConfigFilePath = path.join(DATA_FOLDER_NAME, APP_CONFIG_FILE);
+		const exists = await fileExists(appConfigFilePath);
+		if(!exists) {
+			return new Map();
+		}
+		const appConfigString = await readFileAsString(appConfigFilePath);
+		return (new Map(Object.entries(JSON.parse(appConfigString) as any)));
+	}
+
+	private async saveAppConfigData(appConfigData: Map<string, AppConfig>): Promise<Map<string, AppConfig>> {
+		const content = JSON.stringify(Object.fromEntries(appConfigData));
+		await writeStringToFile(DATA_FOLDER_NAME, APP_CONFIG_FILE, content);
+		return appConfigData;
+	}
+
 }
