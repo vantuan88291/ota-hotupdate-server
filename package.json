@@ -27,9 +27,11 @@
     "@nestjs/core": "^10.4.4",
     "@nestjs/platform-express": "^10.4.4",
     "@nestjs/serve-static": "^4.0.2",
+    "@nestjs/swagger": "^8.1.0",
     "archiver": "^7.0.1",
     "reflect-metadata": "^0.2.1",
     "rxjs": "^7.8.1",
+    "swagger-ui-express": "^5.0.1",
     "unzipper": "^0.12.3",
     "uuid": "^11.0.3"
   },
