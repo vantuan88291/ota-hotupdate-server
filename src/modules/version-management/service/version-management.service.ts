@@ -7,11 +7,13 @@ import { calculateFileChecksum } from 'src/common/utils/checksum.utils';
 import { compressToZip } from 'src/common/utils/compress.utils';
 
 interface CreateNewVersionInput {
+	appId: string;
 	versionName: string;
 	bundle: Buffer;
 }
 
 interface GetVersionUpdateInput {
+	appId: string;
 	versionName: string;
 	urlPrefix?: string;
 }
@@ -29,7 +31,6 @@ interface AppConfig {
 const DATA_FOLDER_NAME = "data";
 const APP_CONFIG_FILE = "app_config.json";
 const PUBLIC_FOLDER_NAME = "public";
-const SAMPLE_APP_ID = "test-ota";
 const TEMP_FOLDER_NAME = "temp";
 const CHECKSUM_FILE = "checksum.json";
 const BUNDLE_FILE_NAME = "bundle.zip";
@@ -37,12 +38,11 @@ const BUNDLE_FILE_NAME = "bundle.zip";
 @Injectable()
 export class VersionManagementService {
 	async createNewVersion(input: CreateNewVersionInput) {
-		// TODO Get App ID
 		// TODO Check grab the lock to handle the update
 		const tempFolderPath = path.join(TEMP_FOLDER_NAME, uuidv4());
-		const folderPath = path.join(TEMP_FOLDER_NAME, SAMPLE_APP_ID);
+		const folderPath = path.join(TEMP_FOLDER_NAME, input.appId);
 		const filePath = await writeBufferToFile(tempFolderPath, input.versionName, input.bundle)
-		this.processNewVersion(input.versionName, filePath, folderPath, SAMPLE_APP_ID)
+		this.processNewVersion(input.versionName, filePath, folderPath, input.appId)
 			.finally(() => {
 				deleteFolder(tempFolderPath);
 				deleteFolder(folderPath);
@@ -53,13 +53,13 @@ export class VersionManagementService {
 	}
 
 	async getVersionUpdate(input: GetVersionUpdateInput): Promise<GetVersionUpdateResult> {
-		const latestVersion = await this.getLatestVersion(SAMPLE_APP_ID);
+		const latestVersion = await this.getLatestVersion(input.appId);
 		if (!latestVersion || input.versionName === latestVersion) {
 			return {}
 		}
-		const targetBundleFilePath = path.join(PUBLIC_FOLDER_NAME, SAMPLE_APP_ID, input.versionName, BUNDLE_FILE_NAME);
+		const targetBundleFilePath = path.join(PUBLIC_FOLDER_NAME, input.appId, input.versionName, BUNDLE_FILE_NAME);
 		const bundleExists = await fileExists(targetBundleFilePath);
-		const bundlePath = bundleExists ? targetBundleFilePath : path.join(PUBLIC_FOLDER_NAME, SAMPLE_APP_ID, latestVersion, BUNDLE_FILE_NAME);
+		const bundlePath = bundleExists ? targetBundleFilePath : path.join(PUBLIC_FOLDER_NAME, input.appId, latestVersion, BUNDLE_FILE_NAME);
 		return {
 			assetBundle: `${input.urlPrefix || ""}/${bundlePath}`
 		}

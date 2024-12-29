@@ -9,5 +9,6 @@ import { AppManagementController } from "./controller/app-management.controller"
   imports: [TypeOrmModule.forFeature([AppEntity, AppPlatformEntity])],
   controllers: [AppManagementController],
   providers: [AppManagementService],
+  exports: [AppManagementService]
 })
 export class AppManagementModule {}
