@@ -1,8 +1,8 @@
 import { Body, Controller, Get, Post, Query, Req, UploadedFile, UseInterceptors } from '@nestjs/common';
-import { VersionManagementService } from './version-management.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
 import { ApiBody, ApiConsumes, ApiProperty, ApiQuery, ApiResponse } from '@nestjs/swagger';
+import { VersionManagementService } from '../service/version-management.service';
 
 class CreateNewVersionBody {
 	@ApiProperty({ description: "New Version"})
