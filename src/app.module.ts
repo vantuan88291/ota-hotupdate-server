@@ -15,6 +15,10 @@ import { AppPlatformEntity } from './modules/app-management/data/app-platform.en
       rootPath: join(__dirname, '..', 'public'),
       serveRoot: '/public',
     }),
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', 'admin', 'dist'),
+      serveRoot: '/console',
+    }),
     TypeOrmModule.forRoot({
       type: 'sqlite',           // Specify SQLite as the database type
       database: 'database.sqlite', // Database file (SQLite database will be created here)

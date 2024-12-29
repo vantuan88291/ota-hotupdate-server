@@ -3,6 +3,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "start": "vite build --watch",
     "build": "vite build",
     "serve": "vite preview",
     "type-check": "tsc --noEmit",
